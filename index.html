@@ -35,10 +35,10 @@
             font-size: 1.7rem;
             letter-spacing: -0.3px;
             color: #0b1b33;
-            margin-bottom: 12px;
+            margin-bottom: 8px;
         }
         h1 small {
-            font-size: 0.95rem;
+            font-size: 0.85rem;
             font-weight: 400;
             color: #5b6f88;
             margin-left: auto;
@@ -46,6 +46,27 @@
             padding: 4px 14px;
             border-radius: 40px;
         }
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.8rem;
+            color: #5b6f88;
+            margin-bottom: 16px;
+            padding: 6px 14px;
+            background: #f0f4fa;
+            border-radius: 30px;
+            flex-wrap: wrap;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-dot.online { background: #0d7c4b; }
+        .status-dot.offline { background: #bc2c3e; }
+        .status-dot.demo { background: #f5a623; }
         .subhead {
             color: #3a4c66;
             font-size: 0.95rem;
@@ -128,10 +149,18 @@
             align-items: center;
             justify-content: space-between;
             transition: 0.15s;
+            animation: fadeIn 0.3s ease;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
         }
         .stock-card:hover {
             border-color: #cddae9;
             background: #fbfdff;
+        }
+        .stock-card.demo-mode {
+            border-left: 4px solid #f5a623;
         }
 
         .stock-info {
@@ -162,6 +191,14 @@
             display: inline-block;
             margin-top: 3px;
             align-self: flex-start;
+        }
+        .stock-tag {
+            font-size: 0.65rem;
+            background: #f5a623;
+            color: white;
+            padding: 1px 10px;
+            border-radius: 20px;
+            margin-left: 8px;
         }
 
         .stock-price-area {
@@ -226,6 +263,16 @@
             padding-top: 18px;
         }
 
+        .demo-badge {
+            display: inline-block;
+            background: #f5a623;
+            color: white;
+            padding: 2px 14px;
+            border-radius: 30px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
         @media (max-width: 500px) {
             .dashboard { padding: 20px 16px; }
             .stock-card { flex-direction: column; align-items: flex-start; gap: 12px; }
@@ -238,8 +285,12 @@
 <div class="dashboard">
     <h1>
         📊 全球看板
-        <small>实时</small>
+        <small id="modeLabel">🌐 实时</small>
     </h1>
+    <div class="status-bar" id="statusBar">
+        <span class="status-dot online" id="statusDot"></span>
+        <span id="statusText">数据源连接中...</span>
+    </div>
     <div class="subhead">
         🔍 输入基金/股票代码或名称 · 支持港股 美股 A股
     </div>
@@ -256,7 +307,7 @@
         </div>
     </div>
     <div class="footer-note">
-        ⚡ 数据来自新浪财经 · 双击卡片移除 · 完全无需代理
+        ⚡ 双击卡片移除 · 自动切换数据源 · 网络不通时使用模拟数据
     </div>
 </div>
 
@@ -264,34 +315,108 @@
     (function() {
         // ---------- 核心状态 ----------
         let watchList = [];
+        let isOnline = false;
+        let isDemoMode = false;
         const container = document.getElementById('cardContainer');
         const searchInput = document.getElementById('searchInput');
         const searchBtn = document.getElementById('searchBtn');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const modeLabel = document.getElementById('modeLabel');
 
-        // ---------- 使用 Script 标签加载 (无跨域问题) ----------
-        function fetchStockData(symbol) {
+        // ---------- 数据源1: 东方财富 API (更稳定) ----------
+        function fetchEastMoney(symbol) {
             return new Promise((resolve, reject) => {
-                const sinaCode = buildSinaCode(symbol);
-                if (!sinaCode) {
-                    reject(new Error(`无法识别代码: ${symbol}，请使用标准格式 (如 00700, AAPL, 600519)`));
+                const code = buildEastMoneyCode(symbol);
+                if (!code) {
+                    reject(new Error(`无法识别代码: ${symbol}`));
                     return;
                 }
 
-                // 新浪返回的是 var hq_str_xxx = "数据"; 直接执行会挂载到 window
+                const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${code}&fields=f43,f44,f45,f46,f47,f48,f49,f50,f51,f52,f57,f58,f60,f116,f117,f124,f125`;
+                
+                const script = document.createElement('script');
+                script.src = url + '&cb=handleEastMoney';
+                script.async = true;
+
+                const timeoutId = setTimeout(() => {
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                    reject(new Error('请求超时'));
+                }, 8000);
+
+                // 定义全局回调
+                window.handleEastMoney = function(data) {
+                    clearTimeout(timeoutId);
+                    if (script.parentNode) script.parentNode.removeChild(script);
+                    
+                    if (data && data.data) {
+                        const d = data.data;
+                        const price = d.f43 || 0;      // 最新价
+                        const close = d.f44 || d.f45 || 0; // 昨收
+                        const name = d.f58 || symbol;
+                        const changePercent = (price > 0 && close > 0) ? ((price - close) / close * 100) : 0;
+                        
+                        // 判断市场
+                        let exchange = '--';
+                        if (code.includes('HK')) exchange = 'HKEX';
+                        else if (code.includes('US')) exchange = 'NASDAQ/NYSE';
+                        else if (code.startsWith('0.') || code.startsWith('1.')) exchange = 'SSE';
+                        else if (code.startsWith('2.')) exchange = 'SZSE';
+                        
+                        resolve({
+                            symbol: symbol.toUpperCase(),
+                            name: name,
+                            exchange: exchange,
+                            price: price,
+                            changePercent: changePercent
+                        });
+                    } else {
+                        reject(new Error('数据为空'));
+                    }
+                    delete window.handleEastMoney;
+                };
+
+                document.head.appendChild(script);
+            });
+        }
+
+        function buildEastMoneyCode(symbol) {
+            const s = symbol.toUpperCase().trim();
+            // 港股: 00700 -> HK.00700
+            if (/^0\d{4}/.test(s) || /^\d{5}/.test(s)) {
+                return `HK.${s}`;
+            }
+            // 美股: AAPL -> US.AAPL
+            if (/^[A-Z]+$/.test(s) && s.length <= 5) {
+                return `US.${s}`;
+            }
+            // A股: 6开头 -> 1.600519 (上海), 0/3开头 -> 0.000001 (深圳)
+            if (/^6\d{5}/.test(s)) return `1.${s}`;
+            if (/^[03]\d{5}/.test(s)) return `0.${s}`;
+            return null;
+        }
+
+        // ---------- 数据源2: 新浪财经 (备选) ----------
+        function fetchSina(symbol) {
+            return new Promise((resolve, reject) => {
+                const sinaCode = buildSinaCode(symbol);
+                if (!sinaCode) {
+                    reject(new Error('无法构建新浪代码'));
+                    return;
+                }
+
                 const script = document.createElement('script');
                 const url = `https://hq.sinajs.cn/list=${sinaCode}`;
                 script.src = url;
                 script.async = true;
 
-                // 设置超时
                 const timeoutId = setTimeout(() => {
                     if (script.parentNode) script.parentNode.removeChild(script);
-                    reject(new Error('请求超时，请稍后重试'));
-                }, 10000);
+                    reject(new Error('新浪请求超时'));
+                }, 8000);
 
                 script.onload = function() {
                     clearTimeout(timeoutId);
-                    // 数据已经通过 script 加载，从全局变量中读取
                     const varName = `hq_str_${sinaCode}`;
                     const dataStr = window[varName];
                     if (dataStr) {
@@ -300,49 +425,41 @@
                             if (parsed && parsed.price > 0) {
                                 resolve(parsed);
                             } else {
-                                reject(new Error('数据解析失败，请检查代码是否正确'));
+                                reject(new Error('新浪数据无效'));
                             }
                         } catch (e) {
-                            reject(new Error('数据格式异常: ' + e.message));
+                            reject(new Error('新浪数据解析失败'));
                         }
                     } else {
-                        reject(new Error('未获取到数据，请检查代码是否正确'));
+                        reject(new Error('新浪数据未找到'));
                     }
-                    // 清理全局变量
                     delete window[varName];
                 };
 
                 script.onerror = function() {
                     clearTimeout(timeoutId);
-                    if (script.parentNode) script.parentNode.removeChild(script);
-                    reject(new Error('网络请求失败，请检查网络连接'));
+                    reject(new Error('新浪网络请求失败'));
                 };
 
                 document.head.appendChild(script);
             });
         }
 
-        // 构建新浪代码
         function buildSinaCode(symbol) {
             const upper = symbol.toUpperCase().replace('.HK', '');
-            // 美股：纯字母（且不是A股指数）
             if (/^[A-Z]+$/.test(upper) && !/^(SH|SZ|HK)/.test(upper)) {
                 return `us${upper}`;
             }
-            // 港股：0开头5位数字 或 包含.HK
             if (/^0\d{4}/.test(upper) || upper.includes('.HK')) {
                 const num = upper.replace(/\D/g, '');
                 if (num.length === 5) return `hk${num}`;
                 if (num.length === 4) return `hk0${num}`;
                 return `hk${num}`;
             }
-            // A股：6开头 → 上海，0/3开头 → 深圳
             if (/^6\d{5}/.test(upper)) return `sh${upper}`;
             if (/^[03]\d{5}/.test(upper)) return `sz${upper}`;
-            // 基金：5开头 → 上海，1开头 → 深圳
             if (/^5\d{5}/.test(upper)) return `sh${upper}`;
             if (/^1[56]\d{4}/.test(upper)) return `sz${upper}`;
-            // 尝试补全
             if (upper.length === 5) {
                 if (upper.startsWith('6')) return `sh${upper}`;
                 if (upper.startsWith('0') || upper.startsWith('3')) return `sz${upper}`;
@@ -350,15 +467,11 @@
             return null;
         }
 
-        // 解析新浪数据
         function parseSinaData(str, sinaCode) {
             const parts = str.split(',');
             if (parts.length < 6) throw new Error('数据字段不足');
-
             const name = parts[0].trim() || sinaCode;
             let price = 0, closePrice = 0;
-            
-            // 根据市场解析不同位置
             if (sinaCode.startsWith('hk')) {
                 price = parseFloat(parts[1]) || 0;
                 closePrice = parseFloat(parts[3]) || price;
@@ -369,18 +482,15 @@
                 price = parseFloat(parts[1]) || 0;
                 closePrice = parseFloat(parts[2]) || price;
             }
-
             let changePercent = 0;
             if (price > 0 && closePrice > 0) {
                 changePercent = ((price - closePrice) / closePrice) * 100;
             }
-
             let exchange = '--';
             if (sinaCode.startsWith('hk')) exchange = 'HKEX';
             else if (sinaCode.startsWith('us')) exchange = 'NASDAQ/NYSE';
             else if (sinaCode.startsWith('sh')) exchange = 'SSE';
             else if (sinaCode.startsWith('sz')) exchange = 'SZSE';
-
             return {
                 symbol: sinaCode.replace(/^(sh|sz|hk|us)/, '').toUpperCase(),
                 name: name,
@@ -388,6 +498,86 @@
                 price: price,
                 changePercent: changePercent
             };
+        }
+
+        // ---------- 模拟数据 (离线演示) ----------
+        function getMockData(symbol) {
+            const s = symbol.toUpperCase().trim();
+            const mockDB = {
+                '00700': { name: '腾讯控股', exchange: 'HKEX', price: 345.2, changePercent: 1.23 },
+                '09988': { name: '阿里巴巴-SW', exchange: 'HKEX', price: 78.5, changePercent: -0.67 },
+                'AAPL': { name: '苹果', exchange: 'NASDAQ', price: 187.5, changePercent: -0.23 },
+                'TSLA': { name: '特斯拉', exchange: 'NASDAQ', price: 245.6, changePercent: 2.89 },
+                '600519': { name: '贵州茅台', exchange: 'SSE', price: 1689.0, changePercent: 0.56 },
+                '000858': { name: '五粮液', exchange: 'SZSE', price: 148.3, changePercent: -1.34 },
+                '510300': { name: '沪深300ETF', exchange: 'SSE', price: 3.892, changePercent: 0.33 },
+            };
+            // 尝试匹配
+            for (let key in mockDB) {
+                if (s === key || s.includes(key) || key.includes(s)) {
+                    return { symbol: key, ...mockDB[key] };
+                }
+            }
+            // 随机生成
+            const change = (Math.random() * 6 - 3);
+            return {
+                symbol: s,
+                name: `${s} (模拟)`,
+                exchange: '--',
+                price: 10 + Math.random() * 200,
+                changePercent: change
+            };
+        }
+
+        // ---------- 统一获取数据 (多数据源容灾) ----------
+        async function fetchStockData(symbol) {
+            // 先尝试东方财富
+            try {
+                const result = await fetchEastMoney(symbol);
+                if (result && result.price > 0) {
+                    isOnline = true;
+                    isDemoMode = false;
+                    updateStatus(true);
+                    return result;
+                }
+            } catch (e) {
+                console.log('东方财富失败，尝试新浪...');
+            }
+
+            // 再尝试新浪
+            try {
+                const result = await fetchSina(symbol);
+                if (result && result.price > 0) {
+                    isOnline = true;
+                    isDemoMode = false;
+                    updateStatus(true);
+                    return result;
+                }
+            } catch (e) {
+                console.log('新浪失败，使用模拟数据...');
+            }
+
+            // 全部失败，使用模拟数据
+            isOnline = false;
+            isDemoMode = true;
+            updateStatus(false);
+            const mock = getMockData(symbol);
+            // 增加模拟标记
+            mock.isMock = true;
+            return mock;
+        }
+
+        // ---------- 状态更新 ----------
+        function updateStatus(online) {
+            if (online) {
+                statusDot.className = 'status-dot online';
+                statusText.textContent = '🟢 数据在线 (东方财富/新浪)';
+                modeLabel.textContent = '🌐 实时';
+            } else {
+                statusDot.className = 'status-dot demo';
+                statusText.textContent = '🟡 演示模式 (使用模拟数据)';
+                modeLabel.textContent = '🎯 演示';
+            }
         }
 
         // ---------- 添加股票 ----------
@@ -398,7 +588,6 @@
             }
             const q = query.trim();
             
-            // 检查是否已存在（忽略大小写）
             const exists = watchList.some(item => item.symbol.toUpperCase() === q.toUpperCase());
             if (exists) {
                 alert(`"${q}" 已在看板中`);
@@ -445,6 +634,9 @@
             watchList.forEach((item, index) => {
                 const card = document.createElement('div');
                 card.className = 'stock-card';
+                if (item.isMock) {
+                    card.classList.add('demo-mode');
+                }
 
                 const infoDiv = document.createElement('div');
                 infoDiv.className = 'stock-info';
@@ -452,6 +644,12 @@
                 const symbolSpan = document.createElement('div');
                 symbolSpan.className = 'stock-symbol';
                 symbolSpan.textContent = item.symbol;
+                if (item.isMock) {
+                    const tag = document.createElement('span');
+                    tag.className = 'stock-tag';
+                    tag.textContent = '模拟';
+                    symbolSpan.appendChild(tag);
+                }
 
                 const nameSpan = document.createElement('div');
                 nameSpan.className = 'stock-name';
@@ -494,7 +692,6 @@
                 card.appendChild(infoDiv);
                 card.appendChild(priceArea);
 
-                // 双击删除
                 card.addEventListener('dblclick', function(e) {
                     e.stopPropagation();
                     watchList = watchList.filter((w, idx) => idx !== index);
@@ -503,6 +700,32 @@
 
                 container.appendChild(card);
             });
+        }
+
+        // ---------- 初始化状态检测 ----------
+        async function checkConnectivity() {
+            try {
+                const test = await fetchEastMoney('AAPL');
+                if (test && test.price > 0) {
+                    isOnline = true;
+                    isDemoMode = false;
+                    updateStatus(true);
+                    return;
+                }
+            } catch (e) {}
+            try {
+                const test = await fetchSina('AAPL');
+                if (test && test.price > 0) {
+                    isOnline = true;
+                    isDemoMode = false;
+                    updateStatus(true);
+                    return;
+                }
+            } catch (e) {}
+            // 全部失败
+            isOnline = false;
+            isDemoMode = true;
+            updateStatus(false);
         }
 
         // ---------- 事件绑定 ----------
@@ -518,7 +741,6 @@
             }
         });
 
-        // 双击标题清空
         document.querySelector('h1').addEventListener('dblclick', function() {
             if (confirm('清空所有卡片？')) {
                 watchList = [];
@@ -526,11 +748,13 @@
             }
         });
 
+        // 启动
         renderCards();
-        console.log('📌 全球看板已启动 (使用Script加载，无跨域问题)');
+        checkConnectivity();
+        console.log('📌 全球看板已启动 (东方财富 + 新浪 + 模拟容灾)');
         console.log('💡 输入代码 如 00700, AAPL, 600519, 510300');
-        console.log('💡 双击卡片可移除，双击标题可清空');
+        console.log('💡 网络不通时自动切换到模拟数据，功能完整可用');
     })();
 </script>
 </body>
-< /html>
+</html>
