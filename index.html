@@ -26,7 +26,6 @@
             border-radius: 36px;
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.04);
             padding: 28px 22px 32px;
-            transition: all 0.2s;
         }
         h1 {
             display: flex;
@@ -46,7 +45,6 @@
             background: #eef2f7;
             padding: 4px 14px;
             border-radius: 40px;
-            letter-spacing: 0.2px;
         }
         .subhead {
             color: #3a4c66;
@@ -82,7 +80,6 @@
         }
         .search-box input::placeholder {
             color: #8a9bb0;
-            font-weight: 400;
         }
         .search-box button {
             flex: 0 0 auto;
@@ -96,7 +93,6 @@
             cursor: pointer;
             transition: 0.15s;
             box-shadow: 0 6px 14px rgba(36, 105, 240, 0.25);
-            letter-spacing: 0.3px;
             display: flex;
             align-items: center;
             gap: 6px;
@@ -104,7 +100,6 @@
         .search-box button:hover {
             background: #1a56d0;
             transform: scale(0.97);
-            box-shadow: 0 4px 10px rgba(36, 105, 240, 0.3);
         }
         .search-box button:active {
             transform: scale(0.94);
@@ -127,13 +122,12 @@
             background: #ffffff;
             border-radius: 24px;
             padding: 18px 20px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02), 0 1px 3px rgba(0, 0, 0, 0.03);
             border: 1px solid #edf2f9;
-            transition: 0.15s;
             display: flex;
             flex-wrap: wrap;
             align-items: center;
             justify-content: space-between;
+            transition: 0.15s;
         }
         .stock-card:hover {
             border-color: #cddae9;
@@ -150,7 +144,6 @@
             font-weight: 650;
             font-size: 1.2rem;
             color: #0b1b33;
-            letter-spacing: -0.2px;
         }
         .stock-name {
             font-size: 0.9rem;
@@ -169,7 +162,6 @@
             display: inline-block;
             margin-top: 3px;
             align-self: flex-start;
-            letter-spacing: 0.3px;
         }
 
         .stock-price-area {
@@ -183,7 +175,6 @@
             font-weight: 600;
             font-size: 1.3rem;
             color: #0b1b33;
-            letter-spacing: -0.2px;
             white-space: nowrap;
         }
         .stock-change {
@@ -233,7 +224,14 @@
             text-align: center;
             border-top: 1px solid #eef3f9;
             padding-top: 18px;
-            letter-spacing: 0.2px;
+        }
+
+        .retry-hint {
+            color: #2469f0;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: underline;
+            text-underline-offset: 2px;
         }
 
         @media (max-width: 500px) {
@@ -266,7 +264,7 @@
         </div>
     </div>
     <div class="footer-note">
-        ⚡ 数据来自新浪财经 · 涨跌颜色实时反馈
+        ⚡ 数据来自新浪财经 · 双击卡片移除 · 点击「重试」可重新加载
     </div>
 </div>
 
@@ -278,55 +276,70 @@
         const searchInput = document.getElementById('searchInput');
         const searchBtn = document.getElementById('searchBtn');
 
-        // ---------- 使用 JSONP 获取新浪数据 (稳定可靠) ----------
-        function fetchStockViaJSONP(symbol) {
+        // ---------- 更稳定的数据获取 (使用多个备选代理) ----------
+        function fetchStockData(symbol) {
             return new Promise((resolve, reject) => {
-                // 1. 构建新浪代码
                 const sinaCode = buildSinaCode(symbol);
                 if (!sinaCode) {
                     reject(new Error(`无法识别代码: ${symbol}，请使用标准格式 (如 00700, AAPL, 600519)`));
                     return;
                 }
 
-                // 2. 创建 JSONP 回调
-                const callbackName = `sina_jsonp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-                const script = document.createElement('script');
                 const url = `https://hq.sinajs.cn/list=${sinaCode}`;
+                // 备选代理列表 (按稳定性排序)
+                const proxies = [
+                    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+                    `https://corsproxy.io/?${encodeURIComponent(url)}`,
+                    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+                ];
 
-                // 3. 定义全局回调函数 (新浪返回的是 var hq_str_xxx = "数据"; 不是标准JSONP，所以需要包装)
-                // 但新浪不支持回调参数，所以用另一种方式：直接获取并解析
-                // 使用 fetch 代理 (但跨域问题)。改用动态 script 加载，并通过监听 window 对象变化
-                // 更稳定方式：直接 fetch 并用代理 (但代理有时不稳定)
-                // 结合两种方式：优先使用 fetch + 代理，备选使用 script 加载 (但新浪 script 返回的是赋值语句)
-                // 最靠谱：使用 fetch 通过 代理服务 (cors-anywhere)
-                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-                fetch(proxyUrl, { 
-                    headers: { 'Content-Type': 'text/plain' } 
-                })
-                .then(response => {
-                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                    return response.text();
-                })
-                .then(data => {
-                    const parsed = parseSinaData(data, sinaCode);
-                    resolve(parsed);
-                })
-                .catch(err => {
-                    // 如果代理失败，尝试另一种方式：直接使用 script 加载 (但需要处理跨域)
-                    // 这里使用一个备用的 JSONP 方式 (利用 window 监听)
-                    // 实际上新浪不支持 JSONP，但我们可以通过 eval 方式 (不推荐)
-                    // 放弃，直接 reject
-                    reject(new Error('数据获取失败，请检查网络或稍后重试'));
-                });
+                let attemptIndex = 0;
+                let timeoutId = null;
 
-                // 设置超时
-                setTimeout(() => {
-                    reject(new Error('请求超时，请稍后重试'));
-                }, 15000);
+                function tryNextProxy() {
+                    if (attemptIndex >= proxies.length) {
+                        if (timeoutId) clearTimeout(timeoutId);
+                        reject(new Error('所有数据源均不可用，请检查网络或稍后重试'));
+                        return;
+                    }
+
+                    const proxyUrl = proxies[attemptIndex];
+                    attemptIndex++;
+
+                    // 设置超时 (8秒)
+                    timeoutId = setTimeout(() => {
+                        // 超时后尝试下一个代理
+                        tryNextProxy();
+                    }, 8000);
+
+                    fetch(proxyUrl, {
+                        headers: { 'Content-Type': 'text/plain' }
+                    })
+                    .then(response => {
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        return response.text();
+                    })
+                    .then(data => {
+                        if (timeoutId) clearTimeout(timeoutId);
+                        const parsed = parseSinaData(data, sinaCode);
+                        if (parsed && parsed.price > 0) {
+                            resolve(parsed);
+                        } else {
+                            reject(new Error('数据解析失败，请检查代码是否正确'));
+                        }
+                    })
+                    .catch(err => {
+                        if (timeoutId) clearTimeout(timeoutId);
+                        // 继续尝试下一个代理
+                        tryNextProxy();
+                    });
+                }
+
+                tryNextProxy();
             });
         }
 
-        // 构建新浪代码 (同之前)
+        // 构建新浪代码
         function buildSinaCode(symbol) {
             const upper = symbol.toUpperCase().replace('.HK', '');
             if (/^[A-Z]/.test(upper) && !/^(?:SH|SZ|HK)/.test(upper)) {
@@ -351,7 +364,6 @@
 
         // 解析新浪数据
         function parseSinaData(str, sinaCode) {
-            // 去除 var hq_str_xxx = 部分
             const start = str.indexOf('"');
             const end = str.lastIndexOf('"');
             if (start === -1 || end === -1) throw new Error('数据格式异常');
@@ -359,23 +371,16 @@
             const parts = dataStr.split(',');
             if (parts.length < 6) throw new Error('数据字段不足');
 
-            // 不同市场解析略有不同，但通常名称在第一个
             const name = parts[0].trim() || sinaCode;
-            // 当前价：不同市场位置不同，尝试多个位置
-            let price = 0;
-            let closePrice = 0;
-            // 港股: 第2个是现价，第3个是昨收
+            let price = 0, closePrice = 0;
+            
             if (sinaCode.startsWith('hk')) {
                 price = parseFloat(parts[1]) || 0;
                 closePrice = parseFloat(parts[3]) || price;
-            } 
-            // 美股: 第2个是现价，第4个是昨收
-            else if (sinaCode.startsWith('us')) {
+            } else if (sinaCode.startsWith('us')) {
                 price = parseFloat(parts[1]) || 0;
                 closePrice = parseFloat(parts[3]) || price;
-            }
-            // A股: 第2个是现价，第3个是昨收
-            else {
+            } else {
                 price = parseFloat(parts[1]) || 0;
                 closePrice = parseFloat(parts[2]) || price;
             }
@@ -414,10 +419,10 @@
             }
 
             searchBtn.disabled = true;
-            searchBtn.textContent = '⏳ 查询中';
+            searchBtn.textContent = '⏳ 查询中...';
 
             try {
-                const data = await fetchStockViaJSONP(q);
+                const data = await fetchStockData(q);
                 if (data && data.price > 0) {
                     watchList.push(data);
                     renderCards();
@@ -426,10 +431,18 @@
                     searchBtn.textContent = '➕ 添加';
                     return true;
                 } else {
-                    throw new Error('未获取到有效数据，请检查代码是否正确');
+                    throw new Error('未获取到有效数据');
                 }
             } catch (error) {
-                alert(`查询失败: ${error.message || '请检查网络或代码'}`);
+                // 显示更友好的错误提示，包含重试按钮
+                const errorMsg = error.message || '查询失败，请检查网络或代码';
+                const retryConfirm = confirm(
+                    `${errorMsg}\n\n是否重新尝试查询 "${q}"？\n(点击「确定」重试，「取消」放弃)`
+                );
+                if (retryConfirm) {
+                    // 递归重试
+                    return await addItemByQuery(q);
+                }
                 searchBtn.disabled = false;
                 searchBtn.textContent = '➕ 添加';
                 return false;
@@ -442,7 +455,6 @@
             if (watchList.length === 0) {
                 const emptyDiv = document.createElement('div');
                 emptyDiv.className = 'empty-state';
-                emptyDiv.id = 'emptyPlaceholder';
                 emptyDiv.innerHTML = `
                     <span>📭</span>
                     <p>输入代码或名称，点击添加<br>（支持港股、美股、A股）</p>
@@ -534,8 +546,9 @@
         });
 
         renderCards();
-        console.log('📌 全球看板已启动 (数据来自新浪财经)');
+        console.log('📌 全球看板已启动 (多代理容灾)');
         console.log('💡 输入代码 如 00700, AAPL, 600519, 510300');
+        console.log('💡 查询超时或失败时会自动重试，也可手动点击「确定」重试');
     })();
 </script>
 </body>
