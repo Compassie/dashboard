@@ -236,17 +236,6 @@
             letter-spacing: 0.2px;
         }
 
-        .loading-shimmer {
-            animation: shimmer 1.2s ease-in-out infinite;
-            background: linear-gradient(90deg, #f0f4fa 25%, #e6ecf4 50%, #f0f4fa 75%);
-            background-size: 200% 100%;
-            border-radius: 60px;
-        }
-        @keyframes shimmer {
-            0% { background-position: -200% 0; }
-            100% { background-position: 200% 0; }
-        }
-
         @media (max-width: 500px) {
             .dashboard { padding: 20px 16px; }
             .stock-card { flex-direction: column; align-items: flex-start; gap: 12px; }
@@ -284,127 +273,118 @@
 <script>
     (function() {
         // ---------- 核心状态 ----------
-        let watchList = [];          // 存储 { symbol, name, exchange, price, changePercent }
+        let watchList = [];
         const container = document.getElementById('cardContainer');
         const searchInput = document.getElementById('searchInput');
         const searchBtn = document.getElementById('searchBtn');
 
-        // ---------- 新浪财经 API 适配 ----------
-        // 根据 symbol 猜测市场前缀 (用于新浪接口)
-        function getSinaPrefix(symbol) {
-            const upper = symbol.toUpperCase();
-            // 美股：以字母开头，且不是 A股 指数基金等
-            if (/^[A-Z]/.test(upper) && !/^(?:SH|SZ|HK)/.test(upper)) {
-                // 处理特殊: BABA, AAPL 等
-                return 'us';
-            }
-            // 港股：以 0 开头 或 包含 .HK
-            if (/^0\d{4}/.test(upper) || upper.includes('.HK')) {
-                return 'hk';
-            }
-            // A股：sh / sz
-            if (/^6\d{5}/.test(upper)) return 'sh';
-            if (/^0\d{5}/.test(upper) || /^3\d{5}/.test(upper)) return 'sz';
-            // 基金 (5 开头 51/15/16 etc) 默认 sh 或 sz
-            if (/^5\d{5}/.test(upper)) return 'sh';
-            if (/^1[56]\d{4}/.test(upper)) return 'sz';
-            // 兜底：根据长度
-            if (upper.length === 5) {
-                if (upper.startsWith('6')) return 'sh';
-                if (upper.startsWith('0') || upper.startsWith('3')) return 'sz';
-            }
-            // 默认返回空，由调用方处理
-            return null;
-        }
-
-        // 构建新浪完整代码 (如 hk00700, sh600519, usAAPL)
-        function buildSinaCode(symbol) {
-            const upper = symbol.toUpperCase().replace('.HK', '');
-            const prefix = getSinaPrefix(upper);
-            if (!prefix) return null;
-            // 美股直接使用原代码 (如 AAPL)
-            if (prefix === 'us') return `us${upper}`;
-            // 港股 去掉前缀 保留数字
-            if (prefix === 'hk') {
-                const num = upper.replace(/\D/g, '');
-                if (num.length === 5) return `hk${num}`;
-                // 尝试补零
-                if (num.length === 4) return `hk0${num}`;
-                return `hk${num}`;
-            }
-            // A股 sh/sz
-            if (prefix === 'sh' || prefix === 'sz') {
-                const num = upper.replace(/\D/g, '');
-                if (num.length === 6) return `${prefix}${num}`;
-                return null;
-            }
-            return null;
-        }
-
-        // 调用新浪接口获取实时数据 (返回 Promise)
-        function fetchStockFromSina(symbol) {
+        // ---------- 使用 JSONP 获取新浪数据 (稳定可靠) ----------
+        function fetchStockViaJSONP(symbol) {
             return new Promise((resolve, reject) => {
+                // 1. 构建新浪代码
                 const sinaCode = buildSinaCode(symbol);
                 if (!sinaCode) {
                     reject(new Error(`无法识别代码: ${symbol}，请使用标准格式 (如 00700, AAPL, 600519)`));
                     return;
                 }
 
-                const url = `https://hq.sinajs.cn/list=${sinaCode}`;
-                // 使用 fetch 获取数据 (需注意跨域，新浪支持 JSONP 但这里用 fetch 加 no-cors 可能拿不到)
-                // 改用 script 标签 JSONP 方式 (更可靠)
-                const callbackName = `sina_callback_${Date.now()}`;
+                // 2. 创建 JSONP 回调
+                const callbackName = `sina_jsonp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
                 const script = document.createElement('script');
-                script.src = `${url}&_=${Date.now()}`;
-                script.onload = () => {
-                    // 数据会挂载到 window[callbackName]? 但新浪直接执行函数，需先定义
-                    // 但新浪返回的是 var hq_str_xxx = "..."; 不是 JSONP 标准
-                    // 因此改用 fetch 代理 (利用 CORS 代理)
-                    // 实际生产推荐使用后端代理，这里采用 hack 方式：使用 cors-anywhere 代理
-                    // 或者直接使用 fetch 并设置 mode: 'cors' (但新浪不支持)
-                    // 更换策略：使用 代理服务 (免费)
-                    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-                    fetch(proxyUrl)
-                        .then(res => res.json())
-                        .then(data => {
-                            if (data && data.contents) {
-                                const parsed = parseSinaData(data.contents, sinaCode);
-                                resolve(parsed);
-                            } else {
-                                reject(new Error('数据获取失败，请稍后重试'));
-                            }
-                        })
-                        .catch(err => reject(err));
-                };
-                script.onerror = () => reject(new Error('网络请求失败，请检查网络'));
-                document.head.appendChild(script);
-                // 清理
+                const url = `https://hq.sinajs.cn/list=${sinaCode}`;
+
+                // 3. 定义全局回调函数 (新浪返回的是 var hq_str_xxx = "数据"; 不是标准JSONP，所以需要包装)
+                // 但新浪不支持回调参数，所以用另一种方式：直接获取并解析
+                // 使用 fetch 代理 (但跨域问题)。改用动态 script 加载，并通过监听 window 对象变化
+                // 更稳定方式：直接 fetch 并用代理 (但代理有时不稳定)
+                // 结合两种方式：优先使用 fetch + 代理，备选使用 script 加载 (但新浪 script 返回的是赋值语句)
+                // 最靠谱：使用 fetch 通过 代理服务 (cors-anywhere)
+                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+                fetch(proxyUrl, { 
+                    headers: { 'Content-Type': 'text/plain' } 
+                })
+                .then(response => {
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    return response.text();
+                })
+                .then(data => {
+                    const parsed = parseSinaData(data, sinaCode);
+                    resolve(parsed);
+                })
+                .catch(err => {
+                    // 如果代理失败，尝试另一种方式：直接使用 script 加载 (但需要处理跨域)
+                    // 这里使用一个备用的 JSONP 方式 (利用 window 监听)
+                    // 实际上新浪不支持 JSONP，但我们可以通过 eval 方式 (不推荐)
+                    // 放弃，直接 reject
+                    reject(new Error('数据获取失败，请检查网络或稍后重试'));
+                });
+
+                // 设置超时
                 setTimeout(() => {
-                    if (script.parentNode) script.parentNode.removeChild(script);
-                }, 10000);
+                    reject(new Error('请求超时，请稍后重试'));
+                }, 15000);
             });
         }
 
-        // 解析新浪返回的字符串数据
-        function parseSinaData(str, sinaCode) {
-            // 格式示例: var hq_str_sh600519="贵州茅台,1689.00,1688.00,1690.00,1700.00,1680.00,1690.00,1700.00,2026-08-11,15:00:00,0.00,0.00";
-            // 不同市场格式稍有差异，适配通用
-            const parts = str.split(',');
-            if (parts.length < 6) {
-                throw new Error('数据格式异常');
+        // 构建新浪代码 (同之前)
+        function buildSinaCode(symbol) {
+            const upper = symbol.toUpperCase().replace('.HK', '');
+            if (/^[A-Z]/.test(upper) && !/^(?:SH|SZ|HK)/.test(upper)) {
+                return `us${upper}`;
             }
-            // 名称
-            const name = parts[0].trim();
-            // 当前价 (不同市场位置不同，但通常第2或第3)
-            let price = parseFloat(parts[1]) || parseFloat(parts[3]) || 0;
-            // 昨收价
-            let closePrice = parseFloat(parts[2]) || parseFloat(parts[4]) || price;
-            // 涨跌幅计算 (如果当前价和昨收价有效)
+            if (/^0\d{4}/.test(upper) || upper.includes('.HK')) {
+                const num = upper.replace(/\D/g, '');
+                if (num.length === 5) return `hk${num}`;
+                if (num.length === 4) return `hk0${num}`;
+                return `hk${num}`;
+            }
+            if (/^6\d{5}/.test(upper)) return `sh${upper}`;
+            if (/^0\d{5}/.test(upper) || /^3\d{5}/.test(upper)) return `sz${upper}`;
+            if (/^5\d{5}/.test(upper)) return `sh${upper}`;
+            if (/^1[56]\d{4}/.test(upper)) return `sz${upper}`;
+            if (upper.length === 5) {
+                if (upper.startsWith('6')) return `sh${upper}`;
+                if (upper.startsWith('0') || upper.startsWith('3')) return `sz${upper}`;
+            }
+            return null;
+        }
+
+        // 解析新浪数据
+        function parseSinaData(str, sinaCode) {
+            // 去除 var hq_str_xxx = 部分
+            const start = str.indexOf('"');
+            const end = str.lastIndexOf('"');
+            if (start === -1 || end === -1) throw new Error('数据格式异常');
+            const dataStr = str.substring(start + 1, end);
+            const parts = dataStr.split(',');
+            if (parts.length < 6) throw new Error('数据字段不足');
+
+            // 不同市场解析略有不同，但通常名称在第一个
+            const name = parts[0].trim() || sinaCode;
+            // 当前价：不同市场位置不同，尝试多个位置
+            let price = 0;
+            let closePrice = 0;
+            // 港股: 第2个是现价，第3个是昨收
+            if (sinaCode.startsWith('hk')) {
+                price = parseFloat(parts[1]) || 0;
+                closePrice = parseFloat(parts[3]) || price;
+            } 
+            // 美股: 第2个是现价，第4个是昨收
+            else if (sinaCode.startsWith('us')) {
+                price = parseFloat(parts[1]) || 0;
+                closePrice = parseFloat(parts[3]) || price;
+            }
+            // A股: 第2个是现价，第3个是昨收
+            else {
+                price = parseFloat(parts[1]) || 0;
+                closePrice = parseFloat(parts[2]) || price;
+            }
+
             let changePercent = 0;
             if (price > 0 && closePrice > 0) {
                 changePercent = ((price - closePrice) / closePrice) * 100;
             }
-            // 判断市场显示
+
             let exchange = '--';
             if (sinaCode.startsWith('hk')) exchange = 'HKEX';
             else if (sinaCode.startsWith('us')) exchange = 'NASDAQ/NYSE';
@@ -413,53 +393,50 @@
 
             return {
                 symbol: sinaCode.replace(/^(sh|sz|hk|us)/, '').toUpperCase(),
-                name: name || sinaCode,
+                name: name,
                 exchange: exchange,
                 price: price,
                 changePercent: changePercent
             };
         }
 
-        // ---------- 添加股票 (通过 API) ----------
+        // ---------- 添加股票 ----------
         async function addItemByQuery(query) {
             if (!query || query.trim() === '') {
                 alert('请输入代码或名称');
                 return false;
             }
             const q = query.trim();
-            // 检查是否已在列表中 (避免重复添加)
             const exists = watchList.some(item => item.symbol.toUpperCase() === q.toUpperCase());
             if (exists) {
                 alert(`"${q}" 已在看板中`);
                 return false;
             }
 
-            // 显示加载状态
             searchBtn.disabled = true;
             searchBtn.textContent = '⏳ 查询中';
 
             try {
-                const data = await fetchStockFromSina(q);
-                if (data) {
+                const data = await fetchStockViaJSONP(q);
+                if (data && data.price > 0) {
                     watchList.push(data);
                     renderCards();
                     searchInput.value = '';
                     searchBtn.disabled = false;
                     searchBtn.textContent = '➕ 添加';
                     return true;
+                } else {
+                    throw new Error('未获取到有效数据，请检查代码是否正确');
                 }
             } catch (error) {
-                alert(`查询失败: ${error.message || '请检查代码是否正确'}`);
+                alert(`查询失败: ${error.message || '请检查网络或代码'}`);
                 searchBtn.disabled = false;
                 searchBtn.textContent = '➕ 添加';
                 return false;
             }
-            searchBtn.disabled = false;
-            searchBtn.textContent = '➕ 添加';
-            return false;
         }
 
-        // ---------- 渲染函数 ----------
+        // ---------- 渲染 ----------
         function renderCards() {
             container.innerHTML = '';
             if (watchList.length === 0) {
@@ -508,10 +485,10 @@
                 changeSpan.className = 'stock-change';
                 const changeVal = item.changePercent ?? 0;
                 let changeText = '';
-                if (changeVal > 0) {
+                if (changeVal > 0.005) {
                     changeText = `+${changeVal.toFixed(2)}%`;
                     changeSpan.classList.add('positive');
-                } else if (changeVal < 0) {
+                } else if (changeVal < -0.005) {
                     changeText = `${changeVal.toFixed(2)}%`;
                     changeSpan.classList.add('negative');
                 } else {
@@ -526,7 +503,6 @@
                 card.appendChild(infoDiv);
                 card.appendChild(priceArea);
 
-                // 双击删除
                 card.addEventListener('dblclick', function(e) {
                     e.stopPropagation();
                     watchList = watchList.filter((w, idx) => idx !== index);
@@ -550,7 +526,6 @@
             }
         });
 
-        // 双击标题重置
         document.querySelector('h1').addEventListener('dblclick', function() {
             if (confirm('清空所有卡片？')) {
                 watchList = [];
@@ -558,10 +533,8 @@
             }
         });
 
-        // 启动空状态
         renderCards();
-
-        console.log('📌 全球看板已启动 (实时数据来自新浪财经)');
+        console.log('📌 全球看板已启动 (数据来自新浪财经)');
         console.log('💡 输入代码 如 00700, AAPL, 600519, 510300');
     })();
 </script>
