@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5, user-scalable=yes">
+    <title>📈 全球行情看板 · 涨跌幅</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            background: #f5f7fb;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 16px;
+        }
+        .dashboard {
+            max-width: 720px;
+            width: 100%;
+            background: white;
+            border-radius: 36px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.04);
+            padding: 28px 22px 32px;
+            transition: all 0.2s;
+        }
+        h1 {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            font-size: 1.7rem;
+            letter-spacing: -0.3px;
+            color: #0b1b33;
+            margin-bottom: 12px;
+        }
+        h1 small {
+            font-size: 0.95rem;
+            font-weight: 400;
+            color: #5b6f88;
+            margin-left: auto;
+            background: #eef2f7;
+            padding: 4px 14px;
+            border-radius: 40px;
+            letter-spacing: 0.2px;
+        }
+        .subhead {
+            color: #3a4c66;
+            font-size: 0.95rem;
+            margin-bottom: 24px;
+            border-left: 4px solid #2469f0;
+            padding-left: 14px;
+            background: #f0f5ff;
+            border-radius: 0 12px 12px 0;
+            line-height: 1.4;
+        }
+        .search-box {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 28px;
+        }
+        .search-box input {
+            flex: 2 1 200px;
+            padding: 14px 18px;
+            border: 1px solid #d9e0e8;
+            border-radius: 60px;
+            font-size: 1rem;
+            background: #fafcff;
+            outline: none;
+            transition: 0.2s;
+            color: #0a1a2f;
+        }
+        .search-box input:focus {
+            border-color: #2469f0;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(36, 105, 240, 0.15);
+        }
+        .search-box input::placeholder {
+            color: #8a9bb0;
+            font-weight: 400;
+        }
+        .search-box button {
+            flex: 0 0 auto;
+            padding: 14px 28px;
+            background: #2469f0;
+            color: white;
+            border: none;
+            border-radius: 60px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: 0.15s;
+            box-shadow: 0 6px 14px rgba(36, 105, 240, 0.25);
+            letter-spacing: 0.3px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .search-box button:hover {
+            background: #1a56d0;
+            transform: scale(0.97);
+            box-shadow: 0 4px 10px rgba(36, 105, 240, 0.3);
+        }
+        .search-box button:active {
+            transform: scale(0.94);
+        }
+
+        /* 卡片网格 */
+        .card-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            margin-top: 6px;
+            min-height: 100px;
+        }
+
+        .stock-card {
+            background: #ffffff;
+            border-radius: 24px;
+            padding: 18px 20px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02), 0 1px 3px rgba(0, 0, 0, 0.03);
+            border: 1px solid #edf2f9;
+            transition: 0.15s;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .stock-card:hover {
+            border-color: #cddae9;
+            background: #fbfdff;
+        }
+
+        .stock-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            flex: 1 1 140px;
+        }
+        .stock-symbol {
+            font-weight: 650;
+            font-size: 1.2rem;
+            color: #0b1b33;
+            letter-spacing: -0.2px;
+        }
+        .stock-name {
+            font-size: 0.9rem;
+            color: #49607c;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 220px;
+        }
+        .stock-exchange {
+            font-size: 0.75rem;
+            background: #e8edf6;
+            padding: 2px 12px;
+            border-radius: 30px;
+            color: #2c405c;
+            display: inline-block;
+            margin-top: 3px;
+            align-self: flex-start;
+            letter-spacing: 0.3px;
+        }
+
+        .stock-price-area {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+        .stock-price {
+            font-weight: 600;
+            font-size: 1.3rem;
+            color: #0b1b33;
+            letter-spacing: -0.2px;
+            white-space: nowrap;
+        }
+        .stock-change {
+            font-weight: 600;
+            font-size: 1.1rem;
+            padding: 6px 16px;
+            border-radius: 60px;
+            background: #f1f5fa;
+            min-width: 82px;
+            text-align: center;
+            white-space: nowrap;
+        }
+        .stock-change.positive {
+            background: #e6f7ed;
+            color: #0d7c4b;
+        }
+        .stock-change.negative {
+            background: #fdeaea;
+            color: #bc2c3e;
+        }
+        .stock-change.neutral {
+            background: #f0f2f5;
+            color: #4f637e;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 32px 10px;
+            color: #6f86a3;
+            background: #f8faff;
+            border-radius: 40px;
+            border: 1px dashed #d2ddea;
+        }
+        .empty-state span {
+            font-size: 2.6rem;
+            display: block;
+            margin-bottom: 8px;
+        }
+        .empty-state p {
+            font-size: 0.95rem;
+        }
+
+        .footer-note {
+            margin-top: 24px;
+            font-size: 0.75rem;
+            color: #7b91ad;
+            text-align: center;
+            border-top: 1px solid #eef3f9;
+            padding-top: 18px;
+            letter-spacing: 0.2px;
+        }
+
+        /* 小屏适配 */
+        @media (max-width: 500px) {
+            .dashboard { padding: 20px 16px; }
+            .stock-card { flex-direction: column; align-items: flex-start; gap: 12px; }
+            .stock-price-area { width: 100%; justify-content: space-between; }
+            .stock-change { min-width: 70px; }
+        }
+    </style>
+</head>
+<body>
+<div class="dashboard">
+    <h1>
+        📊 全球看板
+        <small>实时</small>
+    </h1>
+    <div class="subhead">
+        🔍 输入基金/股票代码或名称 · 支持港股 美股 A股
+    </div>
+
+    <!-- 搜索区 -->
+    <div class="search-box">
+        <input type="text" id="searchInput" placeholder="例: 00700, AAPL, 贵州茅台, 510300" value="">
+        <button id="searchBtn">➕ 添加</button>
+    </div>
+
+    <!-- 卡片列表 -->
+    <div id="cardContainer" class="card-grid">
+        <!-- 动态渲染由 js 控制 -->
+        <div class="empty-state" id="emptyPlaceholder">
+            <span>📭</span>
+            <p>输入代码或名称，点击添加<br>（支持港股、美股、A股）</p>
+        </div>
+    </div>
+    <div class="footer-note">
+        ⚡ 数据基于模拟展示 · 涨跌颜色仅供参考
+    </div>
+</div>
+
+<script>
+    (function() {
+        // ---------- 模拟数据池 (涵盖港/美/A股 基金/股票) ----------
+        // 真实场景下可替换为 API 调用，这里提供丰富示例
+        const MOCK_DB = [
+            // 港股
+            { symbol: '00700', name: '腾讯控股', exchange: 'HKEX', price: 345.2, changePercent: 1.23 },
+            { symbol: '09988', name: '阿里巴巴-SW', exchange: 'HKEX', price: 78.5, changePercent: -0.67 },
+            { symbol: '03690', name: '美团-W', exchange: 'HKEX', price: 112.8, changePercent: 2.45 },
+            { symbol: '09999', name: '网易-S', exchange: 'HKEX', price: 145.3, changePercent: -1.12 },
+            { symbol: '00941', name: '中国移动', exchange: 'HKEX', price: 68.9, changePercent: 0.34 },
+            // 美股
+            { symbol: 'AAPL', name: '苹果', exchange: 'NASDAQ', price: 187.5, changePercent: -0.23 },
+            { symbol: 'TSLA', name: '特斯拉', exchange: 'NASDAQ', price: 245.6, changePercent: 2.89 },
+            { symbol: 'AMZN', name: '亚马逊', exchange: 'NASDAQ', price: 185.2, changePercent: 0.78 },
+            { symbol: 'MSFT', name: '微软', exchange: 'NASDAQ', price: 378.9, changePercent: -0.45 },
+            { symbol: 'GOOGL', name: '谷歌', exchange: 'NASDAQ', price: 141.7, changePercent: 1.01 },
+            { symbol: 'BABA', name: '阿里巴巴', exchange: 'NYSE', price: 74.2, changePercent: -0.89 },
+            // A股 (沪深)
+            { symbol: '600519', name: '贵州茅台', exchange: 'SSE', price: 1689.0, changePercent: 0.56 },
+            { symbol: '000858', name: '五粮液', exchange: 'SZSE', price: 148.3, changePercent: -1.34 },
+            { symbol: '601318', name: '中国平安', exchange: 'SSE', price: 41.2, changePercent: 0.12 },
+            { symbol: '000001', name: '平安银行', exchange: 'SZSE', price: 10.6, changePercent: -0.28 },
+            { symbol: '600036', name: '招商银行', exchange: 'SSE', price: 32.7, changePercent: 0.73 },
+            { symbol: '002594', name: '比亚迪', exchange: 'SZSE', price: 215.0, changePercent: 1.89 },
+            // 基金 (ETF / 指数)
+            { symbol: '510300', name: '华泰柏瑞沪深300ETF', exchange: 'SSE', price: 3.892, changePercent: 0.33 },
+            { symbol: '159919', name: '嘉实沪深300ETF', exchange: 'SZSE', price: 3.875, changePercent: 0.28 },
+            { symbol: '513050', name: '中概互联网ETF', exchange: 'SSE', price: 0.956, changePercent: -1.52 },
+            { symbol: '2800.HK', name: '盈富基金', exchange: 'HKEX', price: 18.92, changePercent: -0.34 },
+            { symbol: 'SPY', name: 'SPDR S&P 500 ETF', exchange: 'NYSE', price: 478.5, changePercent: 0.62 },
+            { symbol: 'QQQ', name: '纳指100ETF', exchange: 'NASDAQ', price: 435.6, changePercent: 0.91 },
+        ];
+
+        // 辅助：根据代码/名称模糊查找 (不区分大小写)
+        function findMatches(query) {
+            if (!query || query.trim() === '') return [];
+            const q = query.trim().toLowerCase();
+            return MOCK_DB.filter(item => {
+                const symbolMatch = item.symbol.toLowerCase().includes(q);
+                const nameMatch = item.name.toLowerCase().includes(q);
+                return symbolMatch || nameMatch;
+            });
+        }
+
+        // ---------- 核心状态 ----------
+        let watchList = [];          // 存储当前展示的卡片数据 (对象数组)
+        const container = document.getElementById('cardContainer');
+        const emptyPlaceholder = document.getElementById('emptyPlaceholder');
+        const searchInput = document.getElementById('searchInput');
+        const searchBtn = document.getElementById('searchBtn');
+
+        // ---------- 渲染函数 ----------
+        function renderCards() {
+            // 清空容器 (保留空状态占位)
+            container.innerHTML = '';
+
+            if (watchList.length === 0) {
+                // 显示空状态
+                const emptyDiv = document.createElement('div');
+                emptyDiv.className = 'empty-state';
+                emptyDiv.id = 'emptyPlaceholder';
+                emptyDiv.innerHTML = `
+                    <span>📭</span>
+                    <p>输入代码或名称，点击添加<br>（支持港股、美股、A股）</p>
+                `;
+                container.appendChild(emptyDiv);
+                return;
+            }
+
+            // 循环生成卡片
+            watchList.forEach((item, index) => {
+                const card = document.createElement('div');
+                card.className = 'stock-card';
+
+                // 左侧信息
+                const infoDiv = document.createElement('div');
+                infoDiv.className = 'stock-info';
+
+                const symbolSpan = document.createElement('div');
+                symbolSpan.className = 'stock-symbol';
+                symbolSpan.textContent = item.symbol;
+
+                const nameSpan = document.createElement('div');
+                nameSpan.className = 'stock-name';
+                nameSpan.textContent = item.name || '--';
+
+                const exchangeSpan = document.createElement('div');
+                exchangeSpan.className = 'stock-exchange';
+                exchangeSpan.textContent = item.exchange || '市场';
+
+                infoDiv.appendChild(symbolSpan);
+                infoDiv.appendChild(nameSpan);
+                infoDiv.appendChild(exchangeSpan);
+
+                // 右侧价格区域
+                const priceArea = document.createElement('div');
+                priceArea.className = 'stock-price-area';
+
+                const priceSpan = document.createElement('div');
+                priceSpan.className = 'stock-price';
+                // 保留两位小数，货币符号不添加，保持清爽
+                priceSpan.textContent = item.price ? item.price.toFixed(2) : '--';
+
+                const changeSpan = document.createElement('div');
+                changeSpan.className = 'stock-change';
+
+                const changeVal = item.changePercent ?? 0;
+                // 格式化：带正负号
+                let changeText = '';
+                if (changeVal > 0) {
+                    changeText = `+${changeVal.toFixed(2)}%`;
+                    changeSpan.classList.add('positive');
+                } else if (changeVal < 0) {
+                    changeText = `${changeVal.toFixed(2)}%`;
+                    changeSpan.classList.add('negative');
+                } else {
+                    changeText = `0.00%`;
+                    changeSpan.classList.add('neutral');
+                }
+                changeSpan.textContent = changeText;
+
+                priceArea.appendChild(priceSpan);
+                priceArea.appendChild(changeSpan);
+
+                // 组装卡片
+                card.appendChild(infoDiv);
+                card.appendChild(priceArea);
+
+                // 可添加删除按钮 (可选) - 为了简洁暂不加，但可以双击移除 (彩蛋)
+                // 双击卡片删除
+                card.addEventListener('dblclick', function(e) {
+                    e.stopPropagation();
+                    // 通过 symbol+name 作为删除依据 (简单去重)
+                    watchList = watchList.filter((w, idx) => idx !== index);
+                    renderCards();
+                });
+
+                container.appendChild(card);
+            });
+        }
+
+        // ---------- 添加股票/基金 ----------
+        function addItemByQuery(query) {
+            if (!query || query.trim() === '') {
+                alert('请输入代码或名称');
+                return false;
+            }
+
+            const matches = findMatches(query);
+            if (matches.length === 0) {
+                alert(`未找到与 "${query}" 匹配的股票/基金。\n请尝试输入代码或中文名称。`);
+                return false;
+            }
+
+            // 如果有多个匹配，取第一个 (也可设计为选择器，但为了简单，取第一个)
+            // 但更好的体验：若多个匹配，让用户选择；这里直接取第一个，但提醒用户。
+            let selectedItem = matches[0];
+            if (matches.length > 1) {
+                // 构建提示
+                const nameList = matches.map(m => `${m.symbol} (${m.name})`).join('；');
+                // 用 confirm 让用户选择是否使用第一个，或者可扩展。
+                const useFirst = confirm(`找到多个匹配：${nameList}\n使用第一个 "${selectedItem.symbol} - ${selectedItem.name}" ？\n点击"确定"添加，取消则忽略。`);
+                if (!useFirst) {
+                    return false;
+                }
+            }
+
+            // 检查是否已在 watchList 中 (通过 symbol 判断)
+            const alreadyExists = watchList.some(w => w.symbol === selectedItem.symbol);
+            if (alreadyExists) {
+                alert(`"${selectedItem.symbol} - ${selectedItem.name}" 已在看板中`);
+                return false;
+            }
+
+            // 添加 (深度拷贝)
+            watchList.push({ ...selectedItem });
+            renderCards();
+            // 清空输入框 (可选)
+            searchInput.value = '';
+            return true;
+        }
+
+        // 处理添加按钮点击
+        function handleAdd() {
+            const query = searchInput.value.trim();
+            addItemByQuery(query);
+        }
+
+        // 处理回车键
+        function handleKeyPress(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleAdd();
+            }
+        }
+
+        // ---------- 预置示例 (首次加载) ----------
+        function loadDefaultExamples() {
+            // 添加三个不同市场的例子，展示多样性
+            const defaults = ['00700', 'AAPL', '600519'];
+            defaults.forEach(code => {
+                const match = findMatches(code);
+                if (match.length > 0) {
+                    const item = match[0];
+                    // 避免重复
+                    if (!watchList.some(w => w.symbol === item.symbol)) {
+                        watchList.push({ ...item });
+                    }
+                }
+            });
+            renderCards();
+        }
+
+        // ---------- 绑定事件 ----------
+        searchBtn.addEventListener('click', handleAdd);
+        searchInput.addEventListener('keypress', handleKeyPress);
+
+        // 额外：点击空白区域聚焦输入框
+        document.addEventListener('click', function(e) {
+            if (e.target.closest('.dashboard') && !e.target.closest('.search-box')) {
+                searchInput.focus();
+            }
+        });
+
+        // 启动：先清空，再加载示例
+        watchList = [];
+        loadDefaultExamples();
+
+        // 提供用户手动清空看板的方法 (调试用，可双击标题重置)
+        document.querySelector('h1').addEventListener('dblclick', function() {
+            if (confirm('重置看板为初始示例？')) {
+                watchList = [];
+                loadDefaultExamples();
+            }
+        });
+
+        // 控制台暴露 (方便调试)
+        window.__watchList = watchList;
+        window.__addStock = addItemByQuery;
+
+        console.log('📌 看板已加载。双击卡片移除，双击标题重置。');
+        console.log('💡 支持代码/名称搜索，示例: 00700, AAPL, 贵州茅台, 510300');
+    })();
+</script>
+</body>
+</html>
