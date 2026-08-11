@@ -20,7 +20,7 @@
             padding: 16px;
         }
         .dashboard {
-            max-width: 820px;
+            max-width: 860px;
             width: 100%;
             background: white;
             border-radius: 36px;
@@ -184,6 +184,13 @@
             border-radius: 30px;
             color: #2c405c;
         }
+        .card-title .source-badge {
+            font-size: 0.6rem;
+            background: #2469f0;
+            color: white;
+            padding: 2px 10px;
+            border-radius: 30px;
+        }
         .card-actions {
             display: flex;
             gap: 8px;
@@ -222,11 +229,11 @@
             background: #f8faff;
             border: 1px solid #eef3f9;
             position: relative;
-            min-height: 320px;
+            min-height: 380px;
         }
         .iframe-wrapper iframe {
             width: 100%;
-            height: 320px;
+            height: 380px;
             border: none;
             display: block;
         }
@@ -285,17 +292,33 @@
             padding-top: 18px;
         }
 
-        .hint-text {
-            font-size: 0.75rem;
-            color: #8a9bb0;
-            margin-top: 4px;
+        .source-selector {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .source-selector label {
+            font-size: 0.85rem;
+            color: #3a4c66;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+        .source-selector input[type="radio"] {
+            accent-color: #2469f0;
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
         }
 
         @media (max-width: 500px) {
             .dashboard { padding: 20px 16px; }
-            .iframe-wrapper iframe { height: 250px; }
-            .iframe-wrapper { min-height: 250px; }
-            .card-title .name { max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
+            .iframe-wrapper iframe { height: 300px; }
+            .iframe-wrapper { min-height: 300px; }
+            .card-title .name { max-width: 80px; overflow: hidden; text-overflow: ellipsis; }
         }
     </style>
 </head>
@@ -307,10 +330,25 @@
     </h1>
     <div class="status-bar">
         <span class="status-dot"></span>
-        <span>✅ 实时数据 · 来自新浪财经</span>
+        <span>✅ 实时数据 · 支持东方财富 / 腾讯财经</span>
     </div>
     <div class="subhead">
-        🔍 输入基金/股票代码或名称 · 点击添加查看实时K线
+        🔍 输入基金/股票代码或名称 · 点击添加查看实时行情
+    </div>
+
+    <!-- 数据源选择 -->
+    <div class="source-selector">
+        <label>
+            <input type="radio" name="source" value="eastmoney" checked>
+            📈 东方财富
+        </label>
+        <label>
+            <input type="radio" name="source" value="tencent">
+            📊 腾讯财经
+        </label>
+        <span style="font-size:0.75rem; color:#8a9bb0; margin-left:8px;">
+            (选择数据源后添加的卡片将使用该源)
+        </span>
     </div>
 
     <div class="search-box">
@@ -323,12 +361,12 @@
             <span>📭</span>
             <p>输入代码或名称，点击添加<br>将显示该标的的实时行情</p>
             <p style="font-size:0.8rem; margin-top:8px; color:#8a9bb0;">
-                💡 数据来自新浪财经 · 包含分时/日K/5日/月K
+                💡 可选择东方财富或腾讯财经作为数据源
             </p>
         </div>
     </div>
     <div class="footer-note">
-        ⚡ 每个卡片内嵌实时行情 · 点击「⟳」刷新 · 点击「✕」移除
+        ⚡ 点击「⟳」刷新 · 点击「✕」移除 · 数据来自所选财经平台
     </div>
 </div>
 
@@ -336,13 +374,21 @@
     (function() {
         // ---------- 核心状态 ----------
         let watchList = [];
+        let currentSource = 'eastmoney';
         const container = document.getElementById('cardContainer');
         const searchInput = document.getElementById('searchInput');
         const searchBtn = document.getElementById('searchBtn');
 
-        // ---------- 内置标的库 (用于显示名称和交易所) ----------
+        // ---------- 数据源切换 ----------
+        document.querySelectorAll('input[name="source"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                currentSource = this.value;
+                console.log(`📌 切换数据源: ${currentSource}`);
+            });
+        });
+
+        // ---------- 内置标的库 ----------
         const STOCK_DB = {
-            // 港股
             '00700': { name: '腾讯控股', exchange: 'HKEX' },
             '09988': { name: '阿里巴巴-SW', exchange: 'HKEX' },
             '03690': { name: '美团-W', exchange: 'HKEX' },
@@ -353,7 +399,6 @@
             '02020': { name: '安踏体育', exchange: 'HKEX' },
             '09618': { name: '京东集团-SW', exchange: 'HKEX' },
             '09888': { name: '百度集团-SW', exchange: 'HKEX' },
-            // 美股
             'AAPL': { name: '苹果', exchange: 'NASDAQ' },
             'TSLA': { name: '特斯拉', exchange: 'NASDAQ' },
             'AMZN': { name: '亚马逊', exchange: 'NASDAQ' },
@@ -364,7 +409,6 @@
             'META': { name: 'Meta', exchange: 'NASDAQ' },
             'NFLX': { name: '奈飞', exchange: 'NASDAQ' },
             'INTC': { name: '英特尔', exchange: 'NASDAQ' },
-            // A股
             '600519': { name: '贵州茅台', exchange: 'SSE' },
             '000858': { name: '五粮液', exchange: 'SZSE' },
             '601318': { name: '中国平安', exchange: 'SSE' },
@@ -375,44 +419,49 @@
             '600900': { name: '长江电力', exchange: 'SSE' },
             '601288': { name: '农业银行', exchange: 'SSE' },
             '600276': { name: '恒瑞医药', exchange: 'SSE' },
-            // 基金
             '510300': { name: '沪深300ETF', exchange: 'SSE' },
             '159919': { name: '嘉实沪深300ETF', exchange: 'SZSE' },
             '513050': { name: '中概互联网ETF', exchange: 'SSE' },
         };
 
-        // ---------- 构建新浪财经实时行情 iframe URL (修正版) ----------
-        function buildIframeUrl(symbol) {
+        // ---------- 构建不同数据源的URL ----------
+        function buildIframeUrl(symbol, source) {
             const upper = symbol.toUpperCase().trim();
-            // 判断市场并构建正确的新浪代码
-            let sinaCode = '';
-            if (/^[A-Z]+$/.test(upper) && !/^(SH|SZ|HK)/.test(upper)) {
-                // 美股
-                sinaCode = `us${upper}`;
-            } else if (/^0\d{4}/.test(upper) || upper.includes('.HK')) {
-                // 港股
-                const num = upper.replace(/\D/g, '');
-                if (num.length === 5) sinaCode = `hk${num}`;
-                else if (num.length === 4) sinaCode = `hk0${num}`;
-                else sinaCode = `hk${num}`;
-            } else if (/^6\d{5}/.test(upper)) {
-                sinaCode = `sh${upper}`;
-            } else if (/^[03]\d{5}/.test(upper)) {
-                sinaCode = `sz${upper}`;
-            } else if (/^5\d{5}/.test(upper)) {
-                sinaCode = `sh${upper}`;
-            } else if (/^1[56]\d{4}/.test(upper)) {
-                sinaCode = `sz${upper}`;
-            } else if (upper.length === 5) {
-                if (upper.startsWith('6')) sinaCode = `sh${upper}`;
-                else if (upper.startsWith('0') || upper.startsWith('3')) sinaCode = `sz${upper}`;
+            
+            if (source === 'eastmoney') {
+                // 东方财富网 - 个股行情页 (更稳定)
+                // 格式: https://quote.eastmoney.com/{market}/{code}.html
+                let market = '';
+                if (/^[A-Z]+$/.test(upper) && !/^(SH|SZ|HK)/.test(upper)) {
+                    market = 'us';
+                } else if (/^0\d{4}/.test(upper) || upper.includes('.HK')) {
+                    market = 'hk';
+                } else if (/^6\d{5}/.test(upper)) {
+                    market = 'sh';
+                } else if (/^[03]\d{5}/.test(upper)) {
+                    market = 'sz';
+                } else if (/^5\d{5}/.test(upper) || /^1[56]\d{4}/.test(upper)) {
+                    // 基金
+                    if (upper.startsWith('5')) market = 'sh';
+                    else market = 'sz';
+                }
+                if (!market) return null;
+                // 东方财富的个股页面
+                return `https://quote.eastmoney.com/${market}/${upper}.html`;
+            } else {
+                // 腾讯财经 - 个股行情页
+                // 格式: https://stock.finance.qq.com/stock/{code}.htm
+                let code = upper;
+                // 港股加 hk 前缀
+                if (/^0\d{4}/.test(upper)) {
+                    code = `hk${upper}`;
+                } else if (/^[A-Z]+$/.test(upper) && !/^(SH|SZ|HK)/.test(upper)) {
+                    // 美股保持原样
+                } else if (/^6\d{5}/.test(upper) || /^[03]\d{5}/.test(upper)) {
+                    // A股保持原样
+                }
+                return `https://stock.finance.qq.com/stock/${code}.htm`;
             }
-
-            if (!sinaCode) return null;
-
-            // 使用新浪财经的移动端适配行情页 (更简洁，加载更快)
-            // 这个页面包含了分时图、报价、涨跌幅等完整信息
-            return `https://finance.sina.com.cn/realstock/company/${sinaCode}/nc.shtml`;
         }
 
         // ---------- 获取标的名称 ----------
@@ -421,19 +470,22 @@
             if (STOCK_DB[upper]) {
                 return { name: STOCK_DB[upper].name, exchange: STOCK_DB[upper].exchange };
             }
-            // 模糊匹配
             for (let key in STOCK_DB) {
                 if (key.includes(upper) || upper.includes(key)) {
                     return { name: STOCK_DB[key].name, exchange: STOCK_DB[key].exchange };
                 }
             }
-            // 尝试从代码推断
             let exchange = '--';
             if (/^[A-Z]+$/.test(upper)) exchange = 'NASDAQ/NYSE';
             else if (/^0\d{4}/.test(upper)) exchange = 'HKEX';
             else if (/^6\d{5}/.test(upper)) exchange = 'SSE';
             else if (/^[03]\d{5}/.test(upper)) exchange = 'SZSE';
             return { name: upper, exchange: exchange };
+        }
+
+        // ---------- 获取数据源名称 ----------
+        function getSourceName(source) {
+            return source === 'eastmoney' ? '东方财富' : '腾讯财经';
         }
 
         // ---------- 添加卡片 ----------
@@ -444,15 +496,13 @@
             }
             const q = query.trim().toUpperCase();
 
-            // 检查是否已存在
             const exists = watchList.some(item => item.symbol === q);
             if (exists) {
                 alert(`"${q}" 已在看板中`);
                 return false;
             }
 
-            // 构建iframe URL
-            const iframeSrc = buildIframeUrl(q);
+            const iframeSrc = buildIframeUrl(q, currentSource);
             if (!iframeSrc) {
                 alert(`无法识别代码: ${q}\n请使用标准格式 (如 00700, AAPL, 600519)`);
                 return false;
@@ -464,6 +514,7 @@
                 name: info.name,
                 exchange: info.exchange,
                 iframeSrc: iframeSrc,
+                source: currentSource,
                 id: Date.now() + Math.random()
             });
 
@@ -483,7 +534,7 @@
                     <span>📭</span>
                     <p>输入代码或名称，点击添加<br>将显示该标的的实时行情</p>
                     <p style="font-size:0.8rem; margin-top:8px; color:#8a9bb0;">
-                        💡 数据来自新浪财经 · 包含分时/日K/5日/月K
+                        💡 可选择东方财富或腾讯财经作为数据源
                     </p>
                 `;
                 container.appendChild(emptyDiv);
@@ -494,7 +545,6 @@
                 const card = document.createElement('div');
                 card.className = 'stock-card';
 
-                // ---- 头部 ----
                 const header = document.createElement('div');
                 header.className = 'card-header';
 
@@ -504,12 +554,12 @@
                     <span class="symbol">${item.symbol}</span>
                     <span class="name">${item.name}</span>
                     <span class="exchange">${item.exchange}</span>
+                    <span class="source-badge">${getSourceName(item.source)}</span>
                 `;
 
                 const actions = document.createElement('div');
                 actions.className = 'card-actions';
                 
-                // 刷新按钮
                 const refreshBtn = document.createElement('button');
                 refreshBtn.className = 'refresh-btn';
                 refreshBtn.textContent = '⟳';
@@ -520,11 +570,10 @@
                     if (iframe) {
                         const src = iframe.src;
                         iframe.src = '';
-                        setTimeout(() => { iframe.src = src; }, 100);
+                        setTimeout(() => { iframe.src = src; }, 200);
                     }
                 });
 
-                // 移除按钮
                 const removeBtn = document.createElement('button');
                 removeBtn.className = 'remove-btn';
                 removeBtn.textContent = '✕';
@@ -541,7 +590,6 @@
                 header.appendChild(title);
                 header.appendChild(actions);
 
-                // ---- iframe 容器 ----
                 const wrapper = document.createElement('div');
                 wrapper.className = 'iframe-wrapper';
 
@@ -551,23 +599,21 @@
                     <div class="spinner"></div>
                     <span>加载实时行情中...</span>
                     <span style="font-size:0.75rem; color:#8a9bb0;">${item.symbol} ${item.name}</span>
+                    <span style="font-size:0.7rem; color:#b0c0d0;">数据源: ${getSourceName(item.source)}</span>
                 `;
 
                 const iframe = document.createElement('iframe');
                 iframe.src = item.iframeSrc;
                 iframe.allow = 'autoplay';
                 iframe.loading = 'lazy';
-                iframe.sandbox = 'allow-scripts allow-same-origin allow-popups allow-forms';
 
-                // 加载完成后隐藏loading
                 iframe.addEventListener('load', function() {
                     loading.classList.add('hidden');
                 });
 
-                // 5秒后自动隐藏loading（防止卡住）
                 setTimeout(() => {
                     loading.classList.add('hidden');
-                }, 8000);
+                }, 10000);
 
                 wrapper.appendChild(iframe);
                 wrapper.appendChild(loading);
@@ -592,7 +638,6 @@
             }
         });
 
-        // 双击标题清空
         document.querySelector('h1').addEventListener('dblclick', function() {
             if (confirm('清空所有卡片？')) {
                 watchList = [];
@@ -602,10 +647,9 @@
 
         // ---------- 启动 ----------
         renderCards();
-        console.log('📌 全球看板已启动 (实时行情嵌入)');
+        console.log('📌 全球看板已启动 (支持东方财富/腾讯财经)');
         console.log('💡 输入代码 如 00700, AAPL, 600519, 510300');
-        console.log('💡 每个卡片显示新浪财经实时行情页');
-        console.log('💡 点击 ⟳ 刷新当前行情，点击 ✕ 移除');
+        console.log('💡 切换数据源后添加的卡片将使用新源');
     })();
 </script>
 </body>
