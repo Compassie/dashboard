@@ -129,7 +129,6 @@
             transform: none;
         }
 
-        /* 卡片网格 - 现在每个卡片是一个iframe容器 */
         .card-grid {
             display: flex;
             flex-direction: column;
@@ -167,6 +166,7 @@
             display: flex;
             align-items: center;
             gap: 8px;
+            flex-wrap: wrap;
         }
         .card-title .symbol {
             font-weight: 650;
@@ -201,6 +201,19 @@
         .card-actions .remove-btn:hover {
             color: #bc2c3e;
         }
+        .card-actions .refresh-btn {
+            background: none;
+            border: none;
+            color: #8a9bb0;
+            font-size: 1rem;
+            cursor: pointer;
+            padding: 0 6px;
+            transition: 0.15s;
+        }
+        .card-actions .refresh-btn:hover {
+            color: #2469f0;
+            transform: rotate(180deg);
+        }
 
         .iframe-wrapper {
             width: 100%;
@@ -209,10 +222,11 @@
             background: #f8faff;
             border: 1px solid #eef3f9;
             position: relative;
+            min-height: 320px;
         }
         .iframe-wrapper iframe {
             width: 100%;
-            height: 280px;
+            height: 320px;
             border: none;
             display: block;
         }
@@ -220,12 +234,13 @@
             position: absolute;
             inset: 0;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
-            background: rgba(248, 250, 255, 0.85);
+            background: rgba(248, 250, 255, 0.92);
             color: #6f86a3;
             font-size: 0.9rem;
-            gap: 8px;
+            gap: 12px;
             transition: opacity 0.5s;
             pointer-events: none;
         }
@@ -233,8 +248,8 @@
             opacity: 0;
         }
         .spinner {
-            width: 20px;
-            height: 20px;
+            width: 28px;
+            height: 28px;
             border: 3px solid #e8edf6;
             border-top-color: #2469f0;
             border-radius: 50%;
@@ -278,7 +293,8 @@
 
         @media (max-width: 500px) {
             .dashboard { padding: 20px 16px; }
-            .iframe-wrapper iframe { height: 200px; }
+            .iframe-wrapper iframe { height: 250px; }
+            .iframe-wrapper { min-height: 250px; }
             .card-title .name { max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
         }
     </style>
@@ -287,14 +303,14 @@
 <div class="dashboard">
     <h1>
         📊 全球看板
-        <small>🌐 实时搜索</small>
+        <small>🌐 实时行情</small>
     </h1>
     <div class="status-bar">
         <span class="status-dot"></span>
-        <span>✅ 实时行情 · 数据来自新浪财经</span>
+        <span>✅ 实时数据 · 来自新浪财经</span>
     </div>
     <div class="subhead">
-        🔍 输入基金/股票代码或名称 · 点击添加即可查看实时K线
+        🔍 输入基金/股票代码或名称 · 点击添加查看实时K线
     </div>
 
     <div class="search-box">
@@ -305,21 +321,21 @@
     <div id="cardContainer" class="card-grid">
         <div class="empty-state" id="emptyPlaceholder">
             <span>📭</span>
-            <p>输入代码或名称，点击添加<br>将显示该标的的实时行情图</p>
+            <p>输入代码或名称，点击添加<br>将显示该标的的实时行情</p>
             <p style="font-size:0.8rem; margin-top:8px; color:#8a9bb0;">
                 💡 数据来自新浪财经 · 包含分时/日K/5日/月K
             </p>
         </div>
     </div>
     <div class="footer-note">
-        ⚡ 每个卡片内嵌实时行情 · 双击「✕」移除 · 完全基于网页嵌入
+        ⚡ 每个卡片内嵌实时行情 · 点击「⟳」刷新 · 点击「✕」移除
     </div>
 </div>
 
 <script>
     (function() {
         // ---------- 核心状态 ----------
-        let watchList = []; // 存储 { symbol, name, exchange, iframeSrc }
+        let watchList = [];
         const container = document.getElementById('cardContainer');
         const searchInput = document.getElementById('searchInput');
         const searchBtn = document.getElementById('searchBtn');
@@ -365,7 +381,7 @@
             '513050': { name: '中概互联网ETF', exchange: 'SSE' },
         };
 
-        // ---------- 构建新浪财经实时行情 iframe URL ----------
+        // ---------- 构建新浪财经实时行情 iframe URL (修正版) ----------
         function buildIframeUrl(symbol) {
             const upper = symbol.toUpperCase().trim();
             // 判断市场并构建正确的新浪代码
@@ -394,15 +410,14 @@
 
             if (!sinaCode) return null;
 
-            // 新浪财经个股行情页 - 使用嵌入式图表
-            // 使用 mini 版本的分时图
-            return `https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/StockPage.getStockGraph?symbol=${sinaCode}&type=time`;
+            // 使用新浪财经的移动端适配行情页 (更简洁，加载更快)
+            // 这个页面包含了分时图、报价、涨跌幅等完整信息
+            return `https://finance.sina.com.cn/realstock/company/${sinaCode}/nc.shtml`;
         }
 
         // ---------- 获取标的名称 ----------
         function getStockInfo(symbol) {
             const upper = symbol.toUpperCase().trim();
-            // 先查内置库
             if (STOCK_DB[upper]) {
                 return { name: STOCK_DB[upper].name, exchange: STOCK_DB[upper].exchange };
             }
@@ -412,8 +427,13 @@
                     return { name: STOCK_DB[key].name, exchange: STOCK_DB[key].exchange };
                 }
             }
-            // 默认
-            return { name: symbol, exchange: '--' };
+            // 尝试从代码推断
+            let exchange = '--';
+            if (/^[A-Z]+$/.test(upper)) exchange = 'NASDAQ/NYSE';
+            else if (/^0\d{4}/.test(upper)) exchange = 'HKEX';
+            else if (/^6\d{5}/.test(upper)) exchange = 'SSE';
+            else if (/^[03]\d{5}/.test(upper)) exchange = 'SZSE';
+            return { name: upper, exchange: exchange };
         }
 
         // ---------- 添加卡片 ----------
@@ -443,7 +463,8 @@
                 symbol: q,
                 name: info.name,
                 exchange: info.exchange,
-                iframeSrc: iframeSrc
+                iframeSrc: iframeSrc,
+                id: Date.now() + Math.random()
             });
 
             renderCards();
@@ -460,7 +481,7 @@
                 emptyDiv.className = 'empty-state';
                 emptyDiv.innerHTML = `
                     <span>📭</span>
-                    <p>输入代码或名称，点击添加<br>将显示该标的的实时行情图</p>
+                    <p>输入代码或名称，点击添加<br>将显示该标的的实时行情</p>
                     <p style="font-size:0.8rem; margin-top:8px; color:#8a9bb0;">
                         💡 数据来自新浪财经 · 包含分时/日K/5日/月K
                     </p>
@@ -487,6 +508,23 @@
 
                 const actions = document.createElement('div');
                 actions.className = 'card-actions';
+                
+                // 刷新按钮
+                const refreshBtn = document.createElement('button');
+                refreshBtn.className = 'refresh-btn';
+                refreshBtn.textContent = '⟳';
+                refreshBtn.title = '刷新行情';
+                refreshBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const iframe = card.querySelector('iframe');
+                    if (iframe) {
+                        const src = iframe.src;
+                        iframe.src = '';
+                        setTimeout(() => { iframe.src = src; }, 100);
+                    }
+                });
+
+                // 移除按钮
                 const removeBtn = document.createElement('button');
                 removeBtn.className = 'remove-btn';
                 removeBtn.textContent = '✕';
@@ -496,6 +534,8 @@
                     watchList = watchList.filter((w, idx) => idx !== index);
                     renderCards();
                 });
+
+                actions.appendChild(refreshBtn);
                 actions.appendChild(removeBtn);
 
                 header.appendChild(title);
@@ -507,21 +547,27 @@
 
                 const loading = document.createElement('div');
                 loading.className = 'loading-overlay';
-                loading.innerHTML = `<div class="spinner"></div> 加载行情中...`;
+                loading.innerHTML = `
+                    <div class="spinner"></div>
+                    <span>加载实时行情中...</span>
+                    <span style="font-size:0.75rem; color:#8a9bb0;">${item.symbol} ${item.name}</span>
+                `;
 
                 const iframe = document.createElement('iframe');
                 iframe.src = item.iframeSrc;
                 iframe.allow = 'autoplay';
                 iframe.loading = 'lazy';
+                iframe.sandbox = 'allow-scripts allow-same-origin allow-popups allow-forms';
 
                 // 加载完成后隐藏loading
                 iframe.addEventListener('load', function() {
                     loading.classList.add('hidden');
                 });
+
                 // 5秒后自动隐藏loading（防止卡住）
                 setTimeout(() => {
                     loading.classList.add('hidden');
-                }, 6000);
+                }, 8000);
 
                 wrapper.appendChild(iframe);
                 wrapper.appendChild(loading);
@@ -558,7 +604,8 @@
         renderCards();
         console.log('📌 全球看板已启动 (实时行情嵌入)');
         console.log('💡 输入代码 如 00700, AAPL, 600519, 510300');
-        console.log('💡 每个卡片显示新浪财经实时行情图');
+        console.log('💡 每个卡片显示新浪财经实时行情页');
+        console.log('💡 点击 ⟳ 刷新当前行情，点击 ✕ 移除');
     })();
 </script>
 </body>
